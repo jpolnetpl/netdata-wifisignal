@@ -1,0 +1,110 @@
+#!/usr/bin/env python
+"""
+Netdata plugin for WiFi interface signal strength monitoring.
+
+It presents chart for link level (in dBm) of every found wireless
+interface.
+
+This plugin should be placed in "plugins.d" directory of your netdata
+installation. It requires source of data in the format of Linux
+/proc/net/wireless file.
+
+Author: Jacek Politowski <dev@jpol.net.pl>
+License: GPL-3.0+, see LICENSE for details.
+"""
+
+import sys
+import time
+
+WIFI_FILE = '/proc/net/wireless'
+
+interfaces = []
+ignored_interfaces = []
+signal = {}
+new_found = False
+
+def populate_interfaces_list():
+    """Read interface names from WIFI_FILE and add them to list."""
+    try:
+        with open(WIFI_FILE, 'r') as f:
+            for _ in xrange(2):
+                next(f)
+            for line in f:
+                if line.find(':') > 0:
+                    interface = line.split(':')[0]
+                    interfaces.append(interface)
+    except (IOError, StopIteration):
+        # Ignore nonexisting or empty file
+        pass
+    except:
+        sys.stderr.write(
+            'ERROR! Unexpected exception (%s) caught while reading "%s". '
+            'Stopping plugin!\n' % (str(sys.exc_info()[0]), WIFI_FILE)
+        )
+        sys.exit(1)
+
+try:
+    UPDATE_INTERVAL = int(sys.argv[1])
+except IndexError:
+    sys.stderr.write("ERROR! Update interval not given.\n")
+    sys.exit(1)
+except ValueError:
+    sys.stderr.write("ERROR! Argument given for update interval is not an integer.\n")
+    sys.exit(1)
+except:
+    sys.stderr.write(
+        'ERROR! Unexpected exception (%s) caught while parsing '
+        'Update interval argument. Stopping plugin!\n' % (str(sys.exc_info()[0]))
+    )
+    sys.exit(1)
+
+# try to populate interfaces list, retry in 5 seconds on failure
+while True:
+    populate_interfaces_list()
+    if len(interfaces) >= 1:
+        break
+    time.sleep(10)
+
+# output chart headers for found interfaces
+for interface in interfaces:
+    print 'CHART net_wifi.%s %s "Signal strength" dBm %s' % (interface, interface, interface)
+    print 'DIMENSION signal'
+
+# main loop
+while True:
+    try:
+        f = open(WIFI_FILE, 'r')
+        for _ in xrange(2):
+            next(f)
+        for line in f:
+            if line.find(':') > 0:
+                interface = line.split(':')[0]
+            else:
+                break
+            if interface in interfaces:
+                try:
+                    signal[interface] = str.strip(line.split()[3], '.')
+                except IndexError:
+                    # no parseable data for tested interface
+                    pass
+                except:
+                    sys.stderr.write('Unable to parse line - "%s"!\n' % (str(sys.exc_info()[0])))
+            else:
+                if interface not in ignored_interfaces:
+                    sys.stderr.write(
+                        'New interface "%s" appeared (and was ignored on purpose)!\n' % (interface)
+                    )
+                    ignored_interfaces.append(interface)
+        f.close()
+    except:
+        sys.stderr.write('Sth BAD - "%s" - happened!\n' % (str(sys.exc_info()[0])))
+        sys.exit(1)
+    for interface in interfaces:
+        print 'BEGIN net_wifi.%s' % (interface)
+        try:
+            print 'SET signal = %s' % (signal[interface])
+        except:
+            print 'SET signal ='
+        print 'END'
+    signal = {}
+    time.sleep(UPDATE_INTERVAL)
