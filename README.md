@@ -2,6 +2,9 @@
 [Netdata](https://github.com/firehol/netdata) plugin for WiFi interface signal
 strength monitoring.
 
+Consider it obsolete, since release v1.27.0 of netdata
+with native and more complete support for `/proc/net/wireles`.
+
 ---
 
 It presents chart for link level (in dBm) of every found wireless interface.
